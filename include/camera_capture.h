@@ -16,12 +16,12 @@ struct CameraParamers {
 struct RawVideoFrame {
     uint8_t* _data;
     size_t   _len;
-    
+
     RawVideoFrame()
             : _data(nullptr)
             , _len(0) {
     }
-    
+
     ~RawVideoFrame() {
         if (_data != nullptr) {
             delete[] _data;
@@ -44,12 +44,16 @@ public:
         _params = params;
     }
 
-    // virtual void get_frame(RawVideoFrame& out_frame);
+    inline void set_frame_cb(std::function<void(std::shared_ptr<RawVideoFrame>)>& cb) {
+        _frame_cb = cb;
+    }
 
-    std::function<void(RawVideoFrame*)> _fram_cb;
+    // virtual void get_frame(RawVideoFrame& out_frame);
 
 protected:
     CameraParamers _params;
+
+    std::function<void(std::shared_ptr<RawVideoFrame>)> _frame_cb;
 
     std::queue<RawVideoFrame> _frame_buffers;
 };

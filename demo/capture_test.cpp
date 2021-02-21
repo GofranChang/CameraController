@@ -6,27 +6,26 @@
 
 using namespace bd_camera_capture;
 
-// static bool g_stop_flag = false;
-
-// void get_output(CameraCapture* capture) {
-//     RawVideoFrame res;
-
-//     while (!g_stop_flag) {
-//         capture->get_frame(res);
-//         printf("!!!!!! %d\n", res._len);
-//     }
-// }
+#define DUMP_TEST
 
 int main(int argc, const char* argv[]) {
     auto capturer = create_camera_capture(CAPTURE_AVFOUNDATION_MAC);
 
     capturer->start_capture_device(0);
-    // std::thread t(get_output, capturer);
+    std::function<void(std::shared_ptr<RawVideoFrame>)> frame_cb =
+            [](std::shared_ptr<RawVideoFrame> out_frame) {
+#ifdef DUMP_TEST
+        static FILE* output_fp = fopen("./out.data", "wb+");
+        if (output_fp) {
+            auto n = fwrite(out_frame->_data, 1, out_frame->_len, output_fp);
+            printf("Write %ld bytes...\n", n);
+        }
+#endif
+    };
+
+    capturer->set_frame_cb(frame_cb);
     
     getchar();
-    // g_stop_flag = true;
-    
-    // t.join();
 
     destroy_camera_capture(capturer);
 

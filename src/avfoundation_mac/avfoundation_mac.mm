@@ -25,15 +25,24 @@ public:
     int stop_capture_device();
     void frame_cb(std::shared_ptr<RawVideoFrame> out_frame);
 
+    inline void set_wrapper(AvfoundationMacCapture* wrapper) {
+        _wrapper = wrapper;
+    }
+
 private:
     AVCaptureSession*            _capture_session;
     AVCaptureDeviceInput*        _capture_device_input;
     AVCaptureDevice*             _capture_device;
     AVCaptureVideoDataOutput*    _capture_video_data_output;
     CaptureDelegate*             _capture;
-    
+    AvfoundationMacCapture*      _wrapper;
+
     // std::queue<RawVideoFrame>    _frame_buffers;
 };
+
+AvfoundationMacCapture::AvfoundationMacCapture()
+        : _internal(nullptr) {
+}
 
 AvfoundationMacCapture::~AvfoundationMacCapture() {
     stop_capture_device();
@@ -42,6 +51,7 @@ AvfoundationMacCapture::~AvfoundationMacCapture() {
 int AvfoundationMacCapture::start_capture_device(int camera_id) {
     if (nullptr == _internal) {
         _internal = new AvfoundationMacCaptureInternal();
+        _internal->set_wrapper(this);
         return _internal->start_capture_device(camera_id, _params);
     }
 
@@ -172,14 +182,9 @@ int AvfoundationMacCaptureInternal::stop_capture_device() {
 }
 
 void AvfoundationMacCaptureInternal::frame_cb(std::shared_ptr<RawVideoFrame> out_frame) {
-//    printf("Get data, size %ld\n", out_frame->_len);
-#ifdef DUMP_TEST
-    static FILE* output_fp = fopen("./out11.data", "wb+");
-    if (output_fp) {
-        auto n = fwrite(out_frame->_data, 1, out_frame->_len, output_fp);
-        printf("Write %ld bytes...\n", n);
+    if (_wrapper != nullptr) {
+        _wrapper->get_frame(out_frame);
     }
-#endif
 }
 
 } // bd_camera_capture
@@ -226,7 +231,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
         _raw_buffer =
                 reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddress(pixelBufer));
     }
-    
+
     auto out_frame =
             std::make_shared<bd_camera_capture::RawVideoFrame>();
     out_frame->_len = data_size;
