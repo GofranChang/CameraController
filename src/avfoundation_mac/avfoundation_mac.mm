@@ -3,6 +3,8 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 
+static std::queue<RawVideoFrame> g_frame_buffers;
+
 @interface CaptureDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 {
     uint8_t* _raw_buffer;
@@ -58,6 +60,13 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
         _raw_buffer =
                 reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddress(pixelBufer));
     }
+    
+    bd_camera_capture::RawVideoFrame out_frame;
+    out_frame._len = data_size;
+    out_frame._data.reset(new uint8_t[data_size]);
+    memcpy(out_frame._data.get(), _raw_buffer, data_size);
+    // _raw_buffer.push()
+    g_frame_buffers.push(out_frame);
 
 #ifdef DUMP_TEST
     static FILE* output_fp = fopen("./out.data", "wb+");
@@ -81,6 +90,7 @@ public:
     ~AvfoundationMacCaptureInternal() = default;
     int start_capture_device(int camera_id, CameraParamers& params);
     int stop_capture_device();
+    void get_frame(RawVideoFrame& out_frame);
 
 private:
     AVCaptureSession*            _capture_session;
@@ -88,6 +98,8 @@ private:
     AVCaptureDevice*             _capture_device;
     AVCaptureVideoDataOutput*    _capture_video_data_output;
     CaptureDelegate*             _capture;
+    
+    // std::queue<RawVideoFrame>    _frame_buffers;
 };
 
 AvfoundationMacCapture::~AvfoundationMacCapture() {
@@ -111,6 +123,10 @@ int AvfoundationMacCapture::stop_capture_device() {
     }
 
     return 0;
+}
+
+void AvfoundationMacCapture::get_frame(RawVideoFrame& out_frame) {
+    if (nullptr != _internal) _internal->get_frame(out_frame);
 }
 
 int AvfoundationMacCaptureInternal::start_capture_device(int camera_id, CameraParamers& params) {
@@ -222,6 +238,13 @@ int AvfoundationMacCaptureInternal::stop_capture_device() {
     [localpool drain];
 
     return 0;
+}
+
+void AvfoundationMacCaptureInternal::get_frame(RawVideoFrame& out_frame) {
+    if (!g_frame_buffers.empty()) {
+        out_frame = g_frame_buffers.front();
+        g_frame_buffers.pop();
+    }
 }
 
 } // bd_camera_capture
