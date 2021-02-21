@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <memory>
 #include <queue>
+#include <functional>
 
 namespace bd_camera_capture {
 
@@ -13,8 +14,20 @@ struct CameraParamers {
 };
 
 struct RawVideoFrame {
-    std::shared_ptr<uint8_t> _data;
-    size_t                   _len;
+    uint8_t* _data;
+    size_t   _len;
+    
+    RawVideoFrame()
+            : _data(nullptr)
+            , _len(0) {
+    }
+    
+    ~RawVideoFrame() {
+        if (_data != nullptr) {
+            delete[] _data;
+            _data = nullptr;
+        }
+    }
 };
 
 class CameraCapture {
@@ -24,18 +37,20 @@ public:
     virtual ~CameraCapture() = default;
 
     virtual int start_capture_device(int camera_id) = 0;
-    
+
     virtual int stop_capture_device() = 0;
-    
+
     inline void set_params(CameraParamers& params) {
         _params = params;
     }
-    
-    virtual void get_frame(RawVideoFrame& out_frame);
-    
+
+    // virtual void get_frame(RawVideoFrame& out_frame);
+
+    std::function<void(RawVideoFrame*)> _fram_cb;
+
 protected:
     CameraParamers _params;
-    
+
     std::queue<RawVideoFrame> _frame_buffers;
 };
 

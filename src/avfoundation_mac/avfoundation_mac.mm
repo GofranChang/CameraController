@@ -3,82 +3,15 @@
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 
-static std::queue<RawVideoFrame> g_frame_buffers;
-
-@interface CaptureDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
-{
-    uint8_t* _raw_buffer;
-}
+@interface CaptureDelegate : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>{
+    bd_camera_capture::AvfoundationMacCaptureInternal* _mac_capture_wrapper;
+};
 
 - (void)captureOutput:(AVCaptureOutput *)captureOutput
 didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
        fromConnection:(AVCaptureConnection *)connection;
 
-@end
-
-@implementation CaptureDelegate
-
-- (id)init {
-    [super init];
-    return self;
-}
-
--(void)dealloc {
-    [super dealloc];
-}
-
-// #define DUMP_TEST
-
-- (void)captureOutput:(AVCaptureOutput *)captureOutput
-didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
-       fromConnection:(AVCaptureConnection *)connection {
-    (void)captureOutput;
-    (void)sampleBuffer;
-    (void)connection;
-
-    CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
-
-    CVPixelBufferLockBaseAddress(imageBuffer, 0);
-    CVPixelBufferRef pixelBufer = CVBufferRetain(imageBuffer);
-
-    size_t width = 0, height = 0, row_bytes = 0, data_size = 0;
-    OSType pixel_format = CVPixelBufferGetPixelFormatType(pixelBufer);
-    uint8_t* _raw_buffer = nullptr;
-
-    data_size = CVPixelBufferGetDataSize(pixelBufer);
-
-    if (CVPixelBufferIsPlanar(pixelBufer)) {
-        width = CVPixelBufferGetWidthOfPlane(pixelBufer, 0);
-        height = CVPixelBufferGetHeightOfPlane(pixelBufer, 0);
-        row_bytes = CVPixelBufferGetBytesPerRowOfPlane(pixelBufer, 0);
-        _raw_buffer =
-                reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(pixelBufer, 0));
-    } else {
-        width = CVPixelBufferGetWidth(pixelBufer);
-        height = CVPixelBufferGetHeight(pixelBufer);
-        row_bytes = CVPixelBufferGetBytesPerRow(pixelBufer);
-        _raw_buffer =
-                reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddress(pixelBufer));
-    }
-    
-    bd_camera_capture::RawVideoFrame out_frame;
-    out_frame._len = data_size;
-    out_frame._data.reset(new uint8_t[data_size]);
-    memcpy(out_frame._data.get(), _raw_buffer, data_size);
-    // _raw_buffer.push()
-    g_frame_buffers.push(out_frame);
-
-#ifdef DUMP_TEST
-    static FILE* output_fp = fopen("./out.data", "wb+");
-    if (output_fp) {
-        auto n = fwrite(_raw_buffer, 1, data_size, output_fp);
-        printf("Write %u bytes...\n", n);
-    }
-#endif
-
-    CVBufferRelease(pixelBufer);
-    CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
-}
+- (void)initWithWrapper:(bd_camera_capture::AvfoundationMacCaptureInternal*) wrapper;
 
 @end
 
@@ -90,7 +23,7 @@ public:
     ~AvfoundationMacCaptureInternal() = default;
     int start_capture_device(int camera_id, CameraParamers& params);
     int stop_capture_device();
-    void get_frame(RawVideoFrame& out_frame);
+    void frame_cb(std::shared_ptr<RawVideoFrame> out_frame);
 
 private:
     AVCaptureSession*            _capture_session;
@@ -125,14 +58,10 @@ int AvfoundationMacCapture::stop_capture_device() {
     return 0;
 }
 
-void AvfoundationMacCapture::get_frame(RawVideoFrame& out_frame) {
-    if (nullptr != _internal) _internal->get_frame(out_frame);
-}
-
 int AvfoundationMacCaptureInternal::start_capture_device(int camera_id, CameraParamers& params) {
     NSAutoreleasePool *localpool = [[NSAutoreleasePool alloc] init];
 
-#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED >= 101400
+#if 0
     AVAuthorizationStatus status = [AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo];
     if (status == AVAuthorizationStatusDenied) {
         fprintf(stderr, "OpenCV: camera access has been denied. Either run 'tccutil reset Camera' "
@@ -187,6 +116,8 @@ int AvfoundationMacCaptureInternal::start_capture_device(int camera_id, CameraPa
     }
 
     _capture = [[CaptureDelegate alloc] init];
+    [_capture initWithWrapper: this];
+    // _capture->initWithWrapper(this);
     _capture_video_data_output = [[AVCaptureVideoDataOutput alloc] init];
     dispatch_queue_t queue = dispatch_queue_create("cameraQueue", DISPATCH_QUEUE_SERIAL);
     [_capture_video_data_output setSampleBufferDelegate: _capture queue: queue];
@@ -240,11 +171,79 @@ int AvfoundationMacCaptureInternal::stop_capture_device() {
     return 0;
 }
 
-void AvfoundationMacCaptureInternal::get_frame(RawVideoFrame& out_frame) {
-    if (!g_frame_buffers.empty()) {
-        out_frame = g_frame_buffers.front();
-        g_frame_buffers.pop();
+void AvfoundationMacCaptureInternal::frame_cb(std::shared_ptr<RawVideoFrame> out_frame) {
+//    printf("Get data, size %ld\n", out_frame->_len);
+#ifdef DUMP_TEST
+    static FILE* output_fp = fopen("./out11.data", "wb+");
+    if (output_fp) {
+        auto n = fwrite(out_frame->_data, 1, out_frame->_len, output_fp);
+        printf("Write %ld bytes...\n", n);
     }
+#endif
 }
 
 } // bd_camera_capture
+
+@implementation CaptureDelegate
+
+- (id)init {
+    [super init];
+    return self;
+}
+
+-(void)dealloc {
+    [super dealloc];
+}
+
+- (void)captureOutput:(AVCaptureOutput *)captureOutput
+didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
+       fromConnection:(AVCaptureConnection *)connection {
+    (void)captureOutput;
+    (void)sampleBuffer;
+    (void)connection;
+
+    CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+
+    CVPixelBufferLockBaseAddress(imageBuffer, 0);
+    CVPixelBufferRef pixelBufer = CVBufferRetain(imageBuffer);
+
+    size_t width = 0, height = 0, row_bytes = 0, data_size = 0;
+    OSType pixel_format = CVPixelBufferGetPixelFormatType(pixelBufer);
+    uint8_t* _raw_buffer = nullptr;
+
+    data_size = CVPixelBufferGetDataSize(pixelBufer);
+
+    if (CVPixelBufferIsPlanar(pixelBufer)) {
+        width = CVPixelBufferGetWidthOfPlane(pixelBufer, 0);
+        height = CVPixelBufferGetHeightOfPlane(pixelBufer, 0);
+        row_bytes = CVPixelBufferGetBytesPerRowOfPlane(pixelBufer, 0);
+        _raw_buffer =
+                reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(pixelBufer, 0));
+    } else {
+        width = CVPixelBufferGetWidth(pixelBufer);
+        height = CVPixelBufferGetHeight(pixelBufer);
+        row_bytes = CVPixelBufferGetBytesPerRow(pixelBufer);
+        _raw_buffer =
+                reinterpret_cast<uint8_t*>(CVPixelBufferGetBaseAddress(pixelBufer));
+    }
+    
+    auto out_frame =
+            std::make_shared<bd_camera_capture::RawVideoFrame>();
+    out_frame->_len = data_size;
+    out_frame->_data = new uint8_t[data_size];
+    memcpy(out_frame->_data, _raw_buffer, data_size);
+
+    if (_mac_capture_wrapper) {
+        _mac_capture_wrapper->frame_cb(out_frame);
+    }
+
+    CVBufferRelease(pixelBufer);
+    CVPixelBufferUnlockBaseAddress(imageBuffer, 0);
+}
+
+- (void)initWithWrapper:(bd_camera_capture::AvfoundationMacCaptureInternal*) wrapper {
+    _mac_capture_wrapper = wrapper;
+}
+
+@end
+

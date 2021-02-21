@@ -16,7 +16,7 @@ public:
     
     virtual int stop_capture_device() override;
     
-    virtual void get_frame(RawVideoFrame& out_frame) override;
+    // virtual void get_frame(RawVideoFrame& out_frame) override;
     
 private:
     AvfoundationMacCaptureInternal* _internal;

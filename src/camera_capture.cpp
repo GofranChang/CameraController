@@ -23,14 +23,15 @@ void destroy_camera_capture(CameraCapture* capture) {
     }
 }
 
-CameraCapture::CameraCapture() {
+CameraCapture::CameraCapture()
+        : _fram_cb(nullptr) {
 }
 
-void CameraCapture::get_frame(RawVideoFrame& out_frame) {
-    if (!_frame_buffers.empty()) {
-        out_frame = _frame_buffers.front();
-        _frame_buffers.pop();
-    }
-}
+//void CameraCapture::get_frame(RawVideoFrame& out_frame) {
+//    if (!_frame_buffers.empty()) {
+//        out_frame = _frame_buffers.front();
+//        _frame_buffers.pop();
+//    }
+//}
 
 } // bd_camera_capture
